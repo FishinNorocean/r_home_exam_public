@@ -1,0 +1,749 @@
+---
+title: "Take Home Exam"
+author: "anonymous"
+date: "2024-01-18"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+\begin{center}
+\textbf{Using R for economics and statistics 2023-2024}
+\end{center}
+
+
+# Part I
+Please write your answer of Part I here.
+
+1-5. A A C B B         
+
+6-10. D C A A C 
+
+11. %m %d
+
+12. high >=
+
+13. repeat break
+
+14. set.seed rnorm df_train summary
+
+15. coefficients mean df_train
+
+16. runtime binwidth geom_density
+
+17. size = "Generosity" geom_point()
+
+18. color geom_line labs
+
+19. geom_histogram seq
+
+20. geom_point alpha
+\newpage
+
+# Part II
+
+## Question 1. Which standard error should we use?
+
+Let's consider a simple linear regression model:
+$$
+y_i=a+bx_i+u_i,\ i=1,2,...,n
+$$
+We can solve the The OLS estimator
+$$
+\hat{b}=\frac{\sum_{i=1}^{n}(y_i-\bar{y})(x_i-\bar{x})}{\sum_{i=1}^{n}(x_i-\bar{x})^2},\ \hat{a}=\bar{y}-\hat{b}\bar{x}.
+$$
+If we suppose conditional homoskedasticity $E(u_i^2|x_i)=\sigma^2$, we can estimate $\sigma^2$ by
+$$
+\hat{\sigma}^2=\frac{1}{n-2}\sum_{i=1}^{n}\hat{u}^2_i,\ \hat{u}_i=y_i-\hat{a}-\hat{b}x_i.
+$$
+Under conditional homoskedasticity, the **simple standard error** of  $\hat{b}$ is
+$$
+se_0(\hat{b})=\sqrt{\frac{\hat{\sigma}^2}{\sum_{i=1}^{n}(x_i-\bar{x})^2}}
+$$
+Based on this standard error, we can test the null hypothesis $H_0:b=0$ under $\alpha=0.05$, the refuse region is
+$$
+W_0=\{|t_0|=\left|\frac{\hat{b}}{se_0(\hat{b})}\right|>1.96\}
+$$
+However,  if conditional homoskedasticity is broken, $se_0$ may be not suitable. An alternative standard error is **White Heteroskedasticity Robust Standard Error**:
+$$
+se_{1}(\hat{b})=\sqrt{\frac{\sum_{i=1}^{n}(x_i-\bar{x})^2\hat{u}^2_i}{(\sum_{i=1}^{n}(x_i-\bar{x})^2)^2}}
+$$
+Based on this robust standard error, we can construct a robust test for the null hypothesis $H_0:b=0$ under $\alpha=0.05$, the refuse region is
+$$
+W_1=\{|t_1|=\left|\frac{\hat{b}}{se_1(\hat{b})}\right|>1.96\}
+$$
+Which standard error should we use? This simulation study may help you.
+
+```{r}
+# setup
+rm(list = ls())
+library(ggplot2)
+library(tibble)
+```
+
+(1) (Simulate data) Please generate $x=(x_1,...,x_n)$ with sample size $n=1000$, $x_i\sim N(0,1)$. Then simulate $u_{1i}\sim N(0,1)$ and $u_{2i}\sim N(0,x_i^2)$. We set $a=1$, $b=2$ , then generate $y_1=(y_{11},y_{12},...,y_{1n})$ and $y_2=(y_{21},y_{22},...,y_{2n})$ by
+
+$$\text{Model 1(Homoskedasticity):}\ y_{1i}=a+bx_i+u_{1i},\ i=1,2,...,n\\$$
+
+$$\text{Model 2(Heteroskedasticity):}\ y_{2i}=a+bx_i+u_{2i},\ i=1,2,...,n$$
+
+Draw scatter plots for $y_1-x$ and $y_2-x$ respectively.
+
+
+```{r}
+set.seed(1234)
+N <- 1000
+x <- rnorm(N)
+u1 <- rnorm(N)
+u2 <- sapply(x, function(xi){rnorm(1,sd = abs(xi))})
+a <- 1
+b <- 2
+
+# Model 1 & 2:
+y1 <- a + b * x + u1
+df_Model_1 <- tibble(y = y1, x)
+y2 <- a + b * x + u2
+df_Model_2 <- tibble(y = y2, x)
+
+# draw plots respectively
+(scat_Model_1 <- ggplot(df_Model_1, aes(x, y)) +
+  geom_point(color = "skyblue") +
+  labs(x = 'x', y = 'y1'))
+(scat_Model_2 <- ggplot(df_Model_2, aes(x, y)) +
+  geom_point(color = "skyblue") +
+  labs(x = 'x', y = 'y2'))
+```
+
+
+(2) (Write a function to implement simple regression) Write a function `reg(x,y,n)`. Input data $x, y$ and sample size $n$, this function should return $\hat{a},\hat{b},\hat{\sigma}^2,se_0(\hat{b})$ and $se_1(\hat{b})$. Use your `reg` function to run regression for `y1~x` and `y2~x`. Compare your result with `lm` function in base `R`. Can you reject the null hypothesis $b=0$? What is the difference between $se_0$ and $se_1$?
+
+```{r}
+# function construction
+
+reg <- function(x, y, n){
+  df = tibble(x,y)
+  x_bar <- mean(x)
+  y_bar <- mean(y)
+  SST <- sum((df$x - x_bar)^2)
+  
+  b_hat <- sum((df$y - y_bar) * (df$x - x_bar)) / SST
+  a_hat <- y_bar - b_hat * x_bar
+  sigma_hat_square = sum((df$y - a_hat - b_hat * df$x)^2) / (n -2)
+  se_b_hat_0 <- sqrt(sigma_hat_square / SST)
+  se_b_hat_1 <- sqrt(sum((df$x - x_bar)^2 * (df$y - a_hat - b_hat * df$x)^2) / SST^2)
+  result <- c(a_hat, b_hat, sigma_hat_square, se_b_hat_0, se_b_hat_1)
+  names(result) = c('a_hat', 'b_hat',  'sigma_hat^2', 'se_0', 'se_1')
+  return(result)
+}
+
+# reg and compare
+reg_Model_1 <- reg(x, y1, N)
+print(reg_Model_1)
+lm_Model_1 <- lm(y1 ~ x)
+
+reg_Model_2 <- reg(x, y2, N)
+print(reg_Model_2)
+lm_Model_2 <- lm(y2 ~ x)
+
+t_value_1 <- reg_Model_1["b_hat"] / reg_Model_1["se_0"]
+print(paste("Without White standard error, the t value of b_hat in model 1 is : ", t_value_1))
+
+t_value_2 <- reg_Model_2["b_hat"] / reg_Model_2["se_1"]
+t_value_2_no <- reg_Model_2["b_hat"] / reg_Model_2["se_0"]
+print(paste("With White standard error, the t value of b_hat in model 2 is : ", t_value_2))
+print(paste("Without White standard error, the t value of b_hat in model 2 is : ", t_value_2_no))
+
+```
+Although in model 2 where heteroskedasticity holds, $se_0$ is much more smaller than $se_1$, t-values of both models, no matter which standard error is applied, are big enough to reject the null hypothesis at the level of 0.05.
+
+When heteroskedasticity holds, we'll get a bias estimating the standard error of coefficients, further a bad t-test. As the variance of error term goes up with the absolute value of $x$ in model 2, we can observe a bigger $se_1$ than $se_2$. In contrast, there is no big difference between them in model 1. In a word, the usual standard error method is more convenient, while it's more appropriate to apply White's method when heteroskedasticity holds.
+
+对于同方差假设不成立的模型2,尽管利用怀特稳健标准误计算的t-统计量要比一般标准误算出来的要小的多，但是模型1和2的t-统计量值（无论是否使用了怀特标准误），都足够大到在0.05的水平下拒绝零假设。
+
+当存在异方差的时候，如果使用$se_0$，那么我们对于系数估计量的方差的估计会产生偏误，造成t检验的结论不可靠。在本题模型2的情况中，误差项的方差随着自变量绝对值的增加而增大，$se_1$要大于$se_0$。然而当不存在异方差的时候，模型1的$se_0$和$se_1$并没有明显的差别。总而言之，使用一般的方法进行估计会更加方便，而用怀特标准误进行估计以及检验在异方差存在的情况下会更加准确。
+
+
+(3) (Hypothesis testing under homoskedasticity) Now write a loop. In every step, generate $x=(x_1,...,x_n)$ and $u_1=(u_{11},...,u_{1n})$ with sample size $n=1000$, $x_i\sim N(0,1)$ and $u_{1i}\sim N(0,1)$ , then use $y_{1i}=1+u_{1i}$ to generate $y_1=(y_{11},...,y_{1n})$(That is, the null hypothesis $b=0$ is true).  Use $t_0=\hat{b}/se_0(\hat{b})$ and $t_1=\hat{b}/se_1(\hat{b})$ to test the null hypothesis $b=0$ respectively. Repeat this process for $M=10000$ times. Please report the proportion of rejecting the null hypothesis $b=0$ for these two different tests. (Hints: you should get two vectors `t0` and `t1` of length $M=10000$. `t0` and `t1` record $t_0$ and $t_1$ values for 10000 simulations. Then compare them with the critical value 1.96, you will get the proportion) 
+
+```{r}
+simulate_t_homo <- function(choice){
+  N <- 1000
+  x <- rnorm(N)
+  u1 <- rnorm(N)
+  y1 <- u1 + 1
+  reg_rslt <- reg(x, y1, N)
+  if (choice == 0) {
+    t_value <- reg_rslt["b_hat"] / reg_rslt["se_0"]
+  } else if (choice == 1) {
+    t_value <- reg_rslt["b_hat"] / reg_rslt["se_1"]
+  } else {
+    t_value <- NA
+  }
+  return(sum(t_value))
+}
+
+t0 <- replicate(10000, simulate_t_homo(0))
+t0_bool <- abs(t0) > 1.96
+t0_reject_proportion <- sum(t0_bool) / 10000
+t1 <- replicate(10000, simulate_t_homo(1))
+t1_bool <- abs(t1) > 1.96
+t1_reject_proportion <- sum(t1_bool) / 10000
+
+print(paste('The proportion of rejecting the null hypothesis using t0 is ', t0_reject_proportion))
+print(paste('The proportion of rejecting the null hypothesis using t1 is ', t1_reject_proportion))
+```
+
+
+(4) (Study the size distortion under heteroskedasticity) Repeat what you do in (3), but now use $u_{2i}\sim N(0,x_i^2)$. That is, in every step, generate $x=(x_1,...,x_n)$ and $u_2=(u_{21},...,u_{2n})$ with sample size $n=1000$, $x_i\sim N(0,1)$ and $u_{2i}\sim N(0,x_i^2)$ , then use $y_{2i}=1+u_{2i}$ to generate $y_2=(y_{21},...,y_{2n})$(That is, the null hypothesis $b=0$ is true).  Use $t_0=\hat{b}/se_0(\hat{b})$ and $t_1=\hat{b}/se_1(\hat{b})$ to test the null hypothesis $b=0$ respectively. Repeat this process for $M=10000$ times. Please report the proportion of rejecting the null hypothesis $b=0$ for these two different tests.
+
+```{r}
+simulate_t_hetero <- function(choice){
+  N <- 1000
+  x <- rnorm(N)
+  u2 <- sapply(x, function(xi){rnorm(1,sd = abs(xi))})
+  y2 <- u2 + 1
+  reg_rslt <- reg(x, y2, N)
+  if (choice == 0) {
+    t_value <- reg_rslt["b_hat"] / reg_rslt["se_0"]
+  } else if (choice == 1) {
+    t_value <- reg_rslt["b_hat"] / reg_rslt["se_1"]
+  } else {
+    t_value <- NA
+  }
+  return(sum(t_value))
+}
+
+t0 <- replicate(10000, simulate_t_hetero(0))
+t0_bool <- abs(t0) > 1.96
+t0_reject_proportion <- sum(t0_bool) / 10000
+t1 <- replicate(10000, simulate_t_hetero(1))
+t1_bool <- abs(t1) > 1.96
+t1_reject_proportion <- sum(t1_bool) / 10000
+
+print(paste('The proportion of rejecting the null hypothesis using t0 is ', t0_reject_proportion))
+print(paste('The proportion of rejecting the null hypothesis using t1 is ', t1_reject_proportion))
+```
+
+
+(5) Compare your result in (3) and (4). Under homoskedasticity, are these two standard errors perform similar? Under heteroskedasticity, which performs better? In application, if you are not sure whether the model is heteroskedasticity, which standard error should we use?
+
+We can find that both methods work out well in model 1, i.e. the probability to reject the null hypothesis when it's actually true is merely 0.05. 
+
+However, only White's method works out well in model 2 when heteroskedasticity holds.
+
+If I'm not sure whether there is a heteroskedasticity problem, I'll apply both methods. If the result shows no big difference, I will consider the homoskedastical assumption is reasonable and report both of them. While if the result is not so, White's result would be considered a more reasonable one.
+
+我们可以发现，无论是哪种方法，对于模型1来说并没有什么差别，t统计量都很好地做到了犯第二类错误的概率为0.05。也就是说，在同方差的情况下，两种方法都正常地发挥了作用。
+
+但是在存在异方差的时候，也就是模型2中，只有怀特标准误的方法比较好的发挥了作用，也就是犯第二类错误的概率是0.05。
+
+如果我不确定模型是否具有异方差性，两种方法我都会使用，如果两者得到的结果没有明显差异，那么我会认为同方差的假设是合理的，如果两者出现了明显的差异，那么我会认为存在异方差性，进而把怀特标准误方法得到的检验结果作为合理的参照。
+
+
+\newpage
+## Question 2. Ploting and Classification: Legendary Pokémon
+
+Suppose we are now in the world of Pokémon. Owning a legendary Pokémon is the dream of every Pokémon trainer. As an expert in Pokémon, you want to investigate the defining characteristics of legendary Pokémon, so that we can find legendary Pokémon precisely. Dataset `pokedex.csv` includes information about 801 Pokémon. `is_legendary` is what we want to predict.
+
+```{r}
+# setup
+rm(list = ls())
+library(ggplot2)
+library(dplyr)
+library(tools)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(ROCR)
+```
+
+
+(1) Load the dataset `pokedex.csv`. Convert columns `type` and `is_legendary` to factors and look at the first six rows of the dataset. Count the number of legendary/non-legendary Pokémon in this dataset, then report the proportion of legendary/non-legendary. 
+
+```{r}
+# load and pre-process data
+df_source <- read.csv('data/pokedex.csv')
+df_source$type <- as.factor(df_source$type)
+df_source$is_legendary <- as.factor(df_source$is_legendary)
+df_source <- tibble(df_source)
+
+# first 6 rows
+head(df_source)
+
+
+# num and proportion calculation
+legen_num <- sum(df_source$is_legendary == 1)
+nlege_num <- sum(df_source$is_legendary == 0)
+legen_prop <- round(mean(df_source$is_legendary == 1), 7)
+nlege_prop <- round(mean(df_source$is_legendary == 0), 7)
+
+# table to store the results
+num_prop_table <- data.frame(matrix(
+  c(legen_num, nlege_num, legen_prop, nlege_prop), nrow = 2))
+colnames(num_prop_table) <- c("Number", "Proportion")
+rownames(num_prop_table) <- c("Legendary", "Ordinary")
+
+print(num_prop_table)
+```
+
+(2) We now know that there are 70 legendary Pokémon – a sizable minority at 9% of the population! Let's start to explore some of their distinguishing characteristics. 
+
+* (i) First of all, we'll plot the relationship between `height_m` and `weight_kg` for all 801 Pokémon, highlighting those that are classified as legendary. We'll also add conditional labels to the plot, which will only print a Pokémon's name if it is taller than 7.5m or heavier than 600kg.
+
+```{r}
+(height_weight_plot <- 
+  ggplot(df_source, aes(weight_kg, height_m)) +
+  geom_point(aes(color = is_legendary)) +
+  geom_text(aes(label = ifelse(weight_kg > 600 | height_m > 7.5, name, "")), 
+            vjust = -0.5) +
+  scale_color_manual(name = "Legendary or not", 
+                     values=c("lightblue", "gold"), 
+                     labels=c("Ordinary","Legendary")) +
+  labs(title="Height against Weight among all pokemons", 
+       x="Weight, in kilograms", 
+       y="Height, in meters") +
+  xlim(0, 1200))
+```
+
+
+* (ii) Now we look at the effect of a Pokémon's `type` on its legendary/non-legendary classification. There are 18 possible types, ranging from the common (Grass / Normal / Water) to the rare (Fairy / Flying / Ice). We will calculate the proportion of legendary Pokémon within each category, and then plot these proportions using a simple bar chart.
+
+```{r}
+type_legen <- group_by(df_source, type) %>%
+  summarise(proportion = mean(is_legendary == 1))
+
+type_legen$proportion <- round(type_legen$proportion, 7)
+print(type_legen)
+
+(type_legen_bar <- ggplot(type_legen, aes(type, proportion)) +
+  geom_bar(stat="identity", fill = 'lightblue') +
+  theme(aspect.ratio = 2/3, axis.text.x = element_text(angle = 60, hjust = 1)) +
+  labs(x = "Type", y = "proportion", title = "Type and Lengendary Proportion"))
+
+```
+
+* (iii) Before fitting the model, we will consider the influence of a Pokémon's fighter stats (`attack`, `sp_attack`, `defense`, `sp_defense`, `hp`, `speed`.) on its status. Please produce boxplots for these fighter stats to show the difference between legendary/non-legendary type. (Hints: That is, you should procedure 6 boxplots. In every boxplot, `x` should be legendary/non-legendary classification, `y` should be one of six fighter stats. In such a boxplot, we can compare the difference of a fighter stat between legendary and non-legendary Pokémon.)
+
+```{r}
+get_box_plot <- function(index){
+  plt <- ggplot(df_source, 
+              aes(is_legendary, .data[[index]], fill = is_legendary)) +
+  geom_boxplot() +
+  labs(x = 'Legendary or not', y = index,
+       title = paste(toTitleCase(index), 
+                     "Comparison Between Legendary and Ordinary")) +
+  scale_x_discrete(labels = c("0" = "Ordinary", "1" = "Legendary")) +
+  scale_fill_manual(values=c("0"="lightblue","1"="gold")) +
+  guides(fill = "none")
+  return(plt)
+}
+
+objs <- c("attack","sp_attack","defense","sp_defense","hp","speed")
+
+for (index in objs) {
+  plt <- get_box_plot(index)
+  print(plt)
+}
+```
+
+(3) As we might expect, legendary Pokémon outshine their ordinary counterparts in height, weight and all fighter stats. What's more, Pokémon's type may also have effect on its legendary/non-legendary classification. Now we consider these factors together to predict whether a Pokémon is legendary.
+
+* (i) Before fitting our model, we will split the `pokedex` into a training set (`pokedex_train`) and a test set (`pokedex_test`). We have generate the rows for training set. Please complete the following code to create a training/test split. Note that there are some rows with `NA` in the test set. Please replace `NA`s in test set with the mean of corresponding column in test set. (e.g., if there is a NA in column `height_m`, then you calculate the mean of this column in test set, and replace NA with this mean)
+
+```{r}
+# Set seed for reproducibility
+set.seed(1234)
+
+# Save number of rows in dataset
+#n <- nrow(pokedex)
+n <- 801
+
+# Generate 60% sample of rows
+sample_rows <- sample(n, 0.6 * n)
+
+# Use `sample_rows` to create training set
+pokedex_train <- df_source[sample_rows,]
+
+# The left is test set
+pokedex_test <- df_source[-sample_rows,]
+
+# Replace NAs in test set with sample mean
+for (col in colnames(pokedex_test)) {
+  if (any(is.na(pokedex_test[[col]]))) {
+    mean_col <- mean(pokedex_test[[col]], na.rm = TRUE)
+    pokedex_test[is.na(pokedex_test[[col]]), col] <- mean_col
+  }
+}
+```
+
+* (ii) Fit a logistic regression on the training set `pokedex_train`. Height, weight, type and all fighter stats should be included as predictor. Use `summary()` to show your model
+
+```{r}
+is_legen_logi <- glm(is_legendary ~ attack + defense + height_m + hp + 
+                  sp_attack + sp_defense + speed + type + weight_kg, 
+                data = pokedex_train, family = "binomial")
+summary(is_legen_logi)
+```
+
+* (iii) Fit a simple classification decision tree on the training set `pokedex_train`. Height, weight, type and all fighter stats should be included as predictor. Show your tree use `rpart.plot()` and explain the plot briefly.
+
+```{r}
+pokedex_train_text <- pokedex_train
+pokedex_train_text$is_legendary <- ifelse(pokedex_train_text$is_legendary == 0,
+                             "Ordinary", "Legendary")
+is_legen_tree <- rpart(is_legendary ~  attack + defense + height_m + hp +
+                         sp_attack + sp_defense + speed + type + weight_kg, 
+                       data = pokedex_train, method = "class")
+is_legen_tree_text <- rpart(is_legendary ~  attack + defense + height_m + hp +
+                         sp_attack + sp_defense + speed + type + weight_kg, 
+                       data = pokedex_train_text, method = "class")
+rpart.plot(is_legen_tree_text, box.palette = "-BuOr") 
+```
+
+Explanation 解释 :
+
+As we can see from the plot, the tree classified the data through `height_m, hp, sp_defense, sp_attack, attack, type` variables. Pokemons with ordinary `height_m, sp_defense, sp_attack` can be predicted as ordinary, making up 84% of all. In short, pokemons with outstanding height and fight stats tend to be legendary, vice versa. 
+
+我们可以从图中看到，decision tree 通过 `height_m, hp, sp_defense, sp_attack, attack, type` 等变量进行了决策，其中身高、sp攻防不出色的宝可梦就被预测为一般宝可梦，占到了所有种类的84%。总而言之，拥有出众的身高、攻击数据的宝可梦更有可能是神兽，反之则更加可能是普通宝可梦。
+
+* (iv) Decision trees are unstable and sensitive to small variations in the data. Now fit a random forest on the training set `pokedex_train` and print model output.
+
+```{r}
+# remove the NA values
+pokedex_train_rmNA <- na.omit(pokedex_train)
+# forest
+is_legen_forest <- randomForest(is_legendary ~  attack + defense + height_m + 
+                                  hp + sp_attack + sp_defense + speed + 
+                                  type + weight_kg, 
+                          data = pokedex_train_rmNA, method = "class")
+print(is_legen_forest)
+print(summary(is_legen_forest))
+```
+
+(4) Now we have 3 models: logistic regression, dicision tree and random forest. In order to allow direct comparison among these models, please use your test set to plot the ROC curves for these models, which will visualize their true positive rate (TPR) and false positive rate (FPR) respectively. The closer the curve is to the top left of the plot, the higher the area under the curve (AUC) and the better the model. How does these models perform? (Hints: you can use the `ROCR` package and `predict`, `prediction` `performance` functions)
+
+```{r}
+# prediction
+
+ROCRpred_logi <- predict(is_legen_logi, 
+                     newdata = pokedex_test, type = "response") %>% 
+  prediction(pokedex_test$is_legendary)
+
+ROCRpred_tree <- predict(is_legen_tree, 
+                         newdata = pokedex_test, type = "prob")[,2] %>% 
+  prediction(pokedex_test$is_legendary)
+
+ROCRpred_forest <- predict(is_legen_forest, 
+                         newdata = pokedex_test, type = "prob")[,2] %>% 
+  prediction(pokedex_test$is_legendary)
+
+# plot
+
+plot(performance(ROCRpred_logi, "tpr", "fpr"), col = 'pink', 
+     main = "ROC Curves", xlab = "FPR", ylab = "TPR")
+plot(performance(ROCRpred_tree, "tpr", "fpr"), col = 'lightgreen', add = TRUE)
+plot(performance(ROCRpred_forest, "tpr", "fpr"), col = 'lightblue', add = TRUE)
+legend("bottomright", legend = c(
+  paste("Logistic Regression, AUC:", 
+        round(performance(ROCRpred_logi, measure = "auc")@y.values[[1]], 4)),
+  paste("Decision Tree, AUC:", 
+        round(performance(ROCRpred_tree, measure = "auc")@y.values[[1]], 4)),
+  paste("Random Forest, AUC:",
+        round(performance(ROCRpred_forest, measure = "auc")@y.values[[1]], 4))
+  ), 
+  col = c("pink", "lightgreen", "lightblue"), lty = 1)
+```
+
+As we can see from the curve, the Logistic Regression model and Random Forest model performs similarly well according to the AUC, while Decision Tree model is not as good as those two.
+
+从图中我们可以发现，依据 AUC 进行判断，逻辑回归模型和随机森林模型表现地都很好，然而决策树模型就不如前两者表现得好。
+
+\newpage
+## Question 3. Modeling VIX
+This question is about the larger VIX data set `vixlarge.csv` that contains the VIX data and the associated dates. The CBOE VIX is colloquially referred to as the "fear index" or the "fear gauge". We choose to study the VIX not only on the widespread consensus that the VIX is a barometer of the overall market sentiment as to what concerns
+investors' risk appetite, but also on the fact that there are many trading strategies that rely on the VIX index for hedging and speculative purposes. 
+
+```{r}
+# set up
+rm(list = ls())
+library(ggplot2)
+library(glmnet)
+library(dplyr)
+```
+
+(1) Plot the VIX data against date. Clearly label the horizontal and vertical axises.
+
+```{r}
+# data load and pre-process
+df_source <- read.csv('data/vixlarge.csv', header = FALSE, sep = ',')
+colnames(df_source) <- c("date", "VIX")
+df_source$date <- as.Date(df_source$date, format = "\'%Y-%m-%d\'")
+
+# plot
+(VIX_date_plot <- ggplot(df_source, aes(date, VIX)) + 
+  geom_line(color = "lightblue") + 
+  labs(title = "VIX and Date Variation", x = 'Date', y ='VIX'))
+```
+
+
+(2) We know that volatility ($y_{t}$ hearafter) exhibits a high degree of persistence and it's likely that $y_{t}$ is better forecast by using more lags, $y_{t-1}, y_{t-3}, \ldots .$ That makes us think of the model with
+$J$ lags:
+$$
+y_{t}=\beta_{0}+\beta_{1} y_{t-1}+\beta_{2} y_{t-2}+\cdots+\beta_{J} y_{t-J}+u_{t}
+$$
+where $u_{t}$ is the error term. But to capture long-range dependence might entail $J=10$ $J=20,$ or higher. Let the dependent variable $y$ be the VIX and the first and the 2nd to 23th columns of the independent variable $X$ be the intercept term and the 1-22 lag of VIX. Write your own code to implement AR(1) to AR(22) model, and pick out the best model by AIC and BIC, are the results same, generate a table to illustrate your results? if not, why?
+
+```{r}
+# Please note that all AIC values calculated by `ar()` have been adjusted: the lowest AIC is set to 0, while all others' values are relative to minimal AIC value. As i calculated the BIC values from AIC values, all theses values are just relative ones. This is why some BIC values are abnormally negative.
+
+# 请注意，所有这里的AIC都是被 `ar()` 函数调整过的：最小的AIC值被设为0，其他的AIC值都是相对于最小值的大小，而BIC的值都是我根据AIC的值计算得到的。因此这里所有的值都是相对的值，这也是什么部分BIC出现了负数的原因。
+
+# transform the data to time series
+ts_source <- ts(df_source$VIX)
+num <- length(ts_source)
+model <- ar(ts_source, order.max = 22, method = "ols")
+IC_values <- data.frame(
+  order = 1:22,
+  AIC = model$aic[2:23],
+  BIC = numeric(22)
+)
+IC_values$BIC <- IC_values$AIC + (log(num) - 2) * IC_values$order
+
+print(IC_values)
+
+print(paste0("From the data we can find out that with AIC, AR(", which.min(IC_values$AIC), ") is the best, while with BIC, AR(", which.min(IC_values$BIC), ") is the best."))
+```
+
+We can find the optimal models are not the same here. This is because AIC and BIC have different punishment for more lags. Here the punishment coefficient of BIC is much bigger($\log(6863) > 2$), thus less lags are chosen in BIC optimal model.
+
+我们可以发现结果是不一样的，用AIC选出了AR(15)，用BIC选出了AR(11)，这是由于AIC和BIC的对于lag数量的惩罚不同导致的，此处BIC对于lag的惩罚系数大的多（$\log(6863) > 2$），因此BIC下的最优阶数比AIC要小。
+
+(3) Set the window length at 3000 and make forecast on the next period $y_{t+1}$, start from the beginning and roll until the end. For each roll, we make forecast using AR(1) to AR(22). Compute the mean squared forecast errors and the mean absolute forecast errors for AR(1) to AR(22) and report them in a table.
+
+```{r}
+# a vacant table to record the model performance
+error_table <- data.frame(matrix(ncol = 44, nrow = 0))
+colnames(error_table) <- c(paste0("sqr_AR", 1:22), paste0("abs_AR", 1:22))
+
+for (mx_lag in 1:22) {
+  for (stt in 1:(length(ts_source) - 3000)) {
+    wd <- ts_source[stt:(stt + 2999)]
+    model <- ar(wd, order.max = mx_lag, method = "ols", aic = F)
+    pred <- predict(model, n.ahead = 1)
+    bias <- ts_source[stt + 3000] - as.numeric(pred$pred)
+    error_table[stt, mx_lag] <- bias^2
+    error_table[stt, mx_lag + 22] <- abs(bias)
+  }
+}
+
+# calculate mean error
+mean_error <- data.frame(
+  Model = c(paste0("AR(", 1:22, ")")),
+  Mean_Sqr_Error = round(apply(error_table[, 1:22], 2, mean), 7),
+  Mean_Abs_Error = round(apply(error_table[, 23:44], 2, mean), 7),
+  row.names = NULL
+)
+print(mean_error)
+
+```
+
+(4) Model with too many lagged terms may be complicate, regularization method may be a good idea. We still do rolling window as (3), but for each roll, we make forecast using ridge and lasso methods with tuning parameter $\lambda = 1, 10$ for each method.(That is, we have 4 new models. We still use 1-22 lag of VIX as predictor.) Compute the mean squared forecast errors and the mean absolute forecast errors. 
+
+```{r}
+# generate overall `y` and `X` to be indexed
+vec_ts <- as.vector(ts_source)
+df_ts_with_lag <- data.frame(
+  "VIX" = vec_ts
+)
+for (i in 1:22) {
+  df_ts_with_lag[,paste0("lag", i)] = lag(vec_ts, i)
+}
+overall_y <- df_ts_with_lag %>%
+  select(VIX) %>% 
+  scale(center = TRUE, scale = FALSE) %>% 
+  as.matrix()
+overall_X <- df_ts_with_lag %>% 
+  select(-VIX) %>% 
+  as.matrix()
+
+# again another error table
+RL_error_table <- data.frame(matrix(ncol = 8, nrow = 0))
+model_names <- c("Ridge_1", "Ridge_10", "Lasso_1", "Lasso_10")
+colnames(RL_error_table) <- c(paste0("sqr_", model_names), 
+                              paste0("abs_", model_names))
+
+# start the loop
+alps <- c(0, 0, 1, 1)
+lmbs <- c(1, 10, 1, 10)
+for (i in 1:4) {
+  alp <- alps[i]
+  lmb <- lmbs[i]
+  for (stt in 1:(length(ts_source) - 3000)){
+    y <- overall_y[(stt + 22):(stt + 2999),]
+    X <- overall_X[(stt + 22):(stt + 2999),]
+    model <- glmnet(X, y, alpha = alp, lambda = lmb)
+    pred <- predict(model, newx = overall_X[stt + 3000,])
+    bias <- overall_y[stt + 3000] - pred
+    RL_error_table[stt, i] <- bias^2
+    RL_error_table[stt, i + 4] <- abs(bias)
+  }
+}
+
+# calculate mean error
+RL_mean_error <- data.frame(
+  Model = model_names,
+  Mean_Sqr_Error = round(apply(RL_error_table[, 1:4], 2, mean), 7),
+  Mean_Abs_Error = round(apply(RL_error_table[, 5:8], 2, mean), 7),
+  row.names = NULL
+)
+overall_mean_error <- rbind(mean_error, RL_mean_error)
+print(RL_mean_error)
+```
+
+(5) Discuss your results in (3) and (4). We have consider 26 models here (AR(1)-AR(22)+2 Lasso Models + 2 Ridge models). Which model performs best? Dose regularization performs better than AR model here? Explain briefly.
+
+```{r}
+print(overall_mean_error)
+mean_MSE_index <- which.min(overall_mean_error$Mean_Sqr_Error)
+mean_MAE_index <- which.min(overall_mean_error$Mean_Abs_Error)
+cat(paste("The model with minimal MSE is",
+          overall_mean_error$Model[mean_MSE_index],
+          "\nThe model with minimal MAE is",
+          overall_mean_error$Model[mean_MAE_index]))
+```
+
+As we can see from the output and the table of Mean Errors, the model with minimal MSE and MAE are AR(5) and AR(2), separately. However, Ridge and Lasso regularization method didn't improve the performance as we had expected, instead, the MAE and MSE of these models are obviously higher than normal AR(22) model. As i am concerned, no lags should be punished for being non-zero in our model, all lags play a part in determining the future value of VIX and thus no need to punish a coefficient to be non-zero. Therefore, the non-necessary punishment failed the model to perform better, while instead, worse.
+
+
+我们可以命令返回的结果以及记录平均误的表格可以得到，按照 MSE，最好的模型是 AR(5)，按照MAE，最好的模型是AR(2)。然而，Ridge and Lasso 方法并没有如同我们所预料地改善模型的表现，反而让模型的误差明显大于 AR(22)。我认为，这背后的原因在于，我们的模型中所有的lag都差不多得决定了未来的 VIX 值，于是没有必要惩罚非零参数。因此施加不必要的参数非零惩罚反而使得模型的表现更差了。
+
+\newpage
+## Question 4. Lasso vs OLS
+We have learnt that Lasso can set some coefficient exactly 0, while OLS can not do this. In this question, we will compare Lasso and OLS.
+
+Consider a high-dimensional regression model:
+$$
+y_i=\beta_1x_{i1}+\beta_2 x_{i2}+...+\beta_{p}x_{ip}+\varepsilon_{i},\ i=1,2,...,n.
+$$
+We consider the case when $p=100$ and $n=1000$. In the simulation study, we set $\beta_1=\beta_3=\beta_{5}=...=\beta_{19}=1$, $\beta_2=\beta_4=...=\beta_{20}=-1$ and $\beta_{21}=...=\beta_{100}=0$. That is, there are only 20 variables can affect $y$, we call them "signal", while other 80 variables are "noise". To find signals, we denote $H^{j}_{0}:\beta_j=0$. For every $H^{j}_{0}$, we conduct hypothesis test and decide we will accept or reject it. If we reject $\beta_j=0$, we say we have a "*discovery*" or we find a signal.(That is often what we hope in empirical analysis, we say $x_j$ can "significant" affect y) If a variable $x_i$ is in fact a noise, but we reject $\beta_i=0$, then this is a "**false discovery**". 
+
+```{r}
+# set up 
+rm(list = ls())
+library(glmnet)
+```
+
+Now we simulate $x_{ip}\sim N(0,1)$ and $\varepsilon_i\sim N(0,1)$.
+```{r}
+set.seed(1234)
+p = 100
+n = 1000
+X = matrix(0,n,p)
+eps = rnorm(n)
+for (j in c(1:p)) {
+  X[,j] = rnorm(n)
+}
+beta = c(c(1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1),rep(0,80))
+Y = X%*%beta + eps
+```
+
+Then we split the sample into traing set and test set
+
+```{r}
+Y_train = Y[1:800]
+X_train = X[1:800,]
+Y_test = Y[801:1000]
+X_test = X[801:1000,]
+```
+
+(1) Under the training set, use `lm()` to fit Y on X (no intercept).For every $H^{j}_{0}$, we use simple t test and get a p-value $p_j$, then we reject $H^{j}_{0}$ if $p_j<\alpha=0.05$. How many signals do you find? What is the *false discovery propotion*? (Hints: FDP, the number of false discovery/the number of discovery)
+
+```{r}
+lm_model <- lm(Y_train~X_train + 0)
+summ_lm <- summary(lm_model)
+sgns <- abs(coef(summ_lm)[, "t value"]) > 1.96
+num_D <- sum(sgns)
+num_FD <- sum(sgns[21:100])
+FDP <- num_FD/num_D
+cat(paste("I found", num_D, 
+          "signals, of which the FDP is", FDP, '.\n'))
+```
+
+(2)  In this simulation study, there are $p=100$ parameters will be tested, which is call multiple hypothesis. Under multiple hypothesis, another rejection rule is: reject  $H^{j}_{0}$ if $p_j<\alpha/p=0.005$. This method is called Bonferroni correction. Under Bonferroni's rejection rule, how many signals do you find? What is the *false discovery propotion*? Dose Bonferroni's rejection rule performs better than (1)?
+
+```{r}
+sgns_BC <- abs(coef(summ_lm)[, "t value"]) > qt(1 - 0.005 / 2, 699)
+num_BC_D <- sum(sgns_BC)
+num_BC_FD <- sum(sgns_BC[21:100])
+FDP_BC <- num_BC_FD/num_BC_D
+cat(paste("With Bonferroni’s rejection rule, I found", num_BC_D, 
+          "signals, of which the FDP is", FDP_BC, 
+          ". It did significantly improve the FDP.\n"))
+```
+
+(3) Now we turn to Lasso. Set `lambda_try = 10 ^ seq(-3, 5, length.out = 100)` and use 10-fold cross validation to select lambda. Plot cross-validation results and report your result. How many variables are selected out by Lasso?
+
+```{r}
+lambdas_to_try <- 10 ^ seq(-3, 5, length.out = 100)
+set.seed(1234)
+lasso_cv <- cv.glmnet(X_train, Y_train,
+                      intercept = FALSE,
+                      alpha = 1,
+                      lambda = lambdas_to_try,
+                      standardize = TRUE,
+                      nfolds = 10
+)
+
+plot(lasso_cv)
+
+lasso_min_coef <- coef(lasso_cv, s = "lambda.min")
+lasso_1se_coef <- coef(lasso_cv, s = "lambda.1se")
+omv_min <- lasso_min_coef[2:101] == 0
+omv_1se <- lasso_1se_coef[2:101] == 0
+omv_min_num <- sum(omv_min)
+omv_1se_num <- sum(omv_1se)
+
+cat(paste(
+  "\nWith lasso: \n",
+  omv_min_num,
+  "variables are omitted,",
+  100 - omv_min_num,
+  "are validated, if we choose the lambda obtaining minimal MSE(lambda.min),\n",
+  omv_1se_num,
+  "variables are omitted,",
+  100 - omv_1se_num,
+  "are validated, if we choose the lambda within a standard error's distance from minimal MSE while omitting variables as much as it can(lambda.1se).\n"
+))
+```
+
+(4) Now we have 4 models(OLS with all 100 variables, OLS with variables selected by t test, OLS with variables selected by Bonferroni, Lasso). Check out-of-sample performance of these models on the test set. Report the out-of-sample MSE of these models and explain your results briefly.
+
+```{r}
+MSE_test_table <- data.frame(matrix(NA,5,2))
+colnames(MSE_test_table) <- c("Model_name", "Test_MSE")
+omv_all <- c(rep(FALSE, 100))
+omv_t <- ! sgns
+omv_B <- ! sgns_BC
+models <- c("OLS_all", "OLS_t", "OLS_B", "Lasso_min", "Lasso_1se")
+omv_vc <- matrix(c(omv_all, omv_t, omv_B, omv_min, omv_1se), ncol = 5)
+for (i in 1:length(models)) {
+  model <- models[i]
+  omv <- omv_vc[,i]
+  X_train_filtered <- X_train[, ! omv]
+  X_test_filtered <- X_test[, ! omv]
+  lm_model <- lm(Y_train~X_train_filtered + 0)
+  pred <- X_test_filtered %*% as.vector(coef(lm_model))
+  bias <- Y_test - pred
+  MSE <- mean(bias^2)
+  MSE_test_table[i, 1] <- model
+  MSE_test_table[i, 2] <- MSE
+}
+
+MSE_test_table$Test_MSE <- round(MSE_test_table$Test_MSE, 7)
+print(MSE_test_table)
+```
+
+As we can see from the report table, t-selection method has minimal MSE while ordinary no-selection model has maximal MSE. With Lasso selection, `lambda.min` model doesn't work as good as `lambda.1se` model, as it has more false positive variables included. Although Lasso with lambda.1se method does performs better than B-selection method, it's still not as good as t-selection method in our simulation.
+
+如我们可以从报告的表格中可以看到，t-检验选取的模型有着最小的MSE，而未经选择的模型最大。 在Lasso选取的变量形成的模型中，因为选取的噪声变量更多，lambda.min 选择的模型表现不如`lambda.1se`选择的模型。尽管 `lambda.1se` 模型的表现要比 B-选取的模型更好，但还是不如t-检验选取的模型来得好。
